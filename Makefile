@@ -1,103 +1,179 @@
 CLEAN_FILES = # deliberately empty, so we can append below.
 CXX=g++
-LDFLAGS= -lpthread -lrt
-CXXFLAGS= -g -std=c++11 -fno-builtin-memcmp -msse -msse4.2 -pipe -fPIC
+PLATFORM_LDFLAGS= -lpthread -lrt
+PLATFORM_CXXFLAGS= -std=c++11 -fno-builtin-memcmp -msse -msse4.2 
 PROFILING_FLAGS=-pg
-ARFLAGS = rs
 OPT=
+LDFLAGS += -Wl,-rpath=$(RPATH)
+
+# DEBUG_LEVEL can have two values:
+# * DEBUG_LEVEL=2; this is the ultimate debug mode. It will compile pika
+# without any optimizations. To compile with level 2, issue `make dbg`
+# * DEBUG_LEVEL=0; this is the debug level we use for release. If you're
+# running pika in production you most definitely want to compile pika
+# with debug level 0. To compile with level 0, run `make`,
 
 # Set the default DEBUG_LEVEL to 0
 DEBUG_LEVEL?=0
 
 ifeq ($(MAKECMDGOALS),dbg)
-  DEBUG_LEVEL=2 # compatible with rocksdb
+  DEBUG_LEVEL=2
 endif
 
-# compile with -O2 if for release
+ifneq ($(DISABLE_UPDATE_SB), 1)
+$(info updating submodule)
+dummy := $(shell (git submodule init && git submodule update))
+endif
+
+# compile with -O2 if debug level is not 2
+ifneq ($(DEBUG_LEVEL), 2)
+OPT += -O2 -fno-omit-frame-pointer
 # if we're compiling for release, compile without debug code (-DNDEBUG) and
 # don't treat warnings as errors
-ifeq ($(DEBUG_LEVEL),0)
+OPT += -DNDEBUG
 DISABLE_WARNING_AS_ERROR=1
-OPT += -O2 -fno-omit-frame-pointer -DNDEBUG
+# Skip for archs that don't support -momit-leaf-frame-pointer
+ifeq (,$(shell $(CXX) -fsyntax-only -momit-leaf-frame-pointer -xc /dev/null 2>&1))
+OPT += -momit-leaf-frame-pointer
+endif
 else
 $(warning Warning: Compiling in debug mode. Don't use the resulting binary in production)
-OPT += -O0 $(PROFILING_FLAGS)
+OPT += $(PROFILING_FLAGS)
+DEBUG_SUFFIX = "_debug"
 endif
 
-#-----------------------------------------------
+# Link tcmalloc if exist
+dummy := $(shell ("$(CURDIR)/detect_environment" "$(CURDIR)/make_config.mk"))
+include make_config.mk
+CLEAN_FILES += $(CURDIR)/make_config.mk
+PLATFORM_LDFLAGS += $(TCMALLOC_LDFLAGS)
+PLATFORM_LDFLAGS += $(ROCKSDB_LDFLAGS)
+PLATFORM_CXXFLAGS += $(TCMALLOC_EXTENSION_FLAGS)
 
-SRC_DIR=./src
-DEPS_DIR=./deps
-VERSION_CC=$(SRC_DIR)/build_version.cc
-LIB_SOURCES :=  $(VERSION_CC) \
-				$(filter-out $(VERSION_CC), $(wildcard $(SRC_DIR)/*.cc))
+# ----------------------------------------------
+OUTPUT = $(CURDIR)/output
+THIRD_PATH = $(CURDIR)/third
+SRC_PATH = $(CURDIR)/src
 
-ifndef ROCKSDB_PATH
-  $(warning Warning: missing rocksdb path, using default)
-  ROCKSDB_PATH=$(DEPS_DIR)/rocksdb
-endif
-ROCKSDB_INCLUDE_DIR=$(ROCKSDB_PATH)/include
-ROCKSDB_LIBRARY=$(ROCKSDB_PATH)/librocksdb.a
+# ----------------Dependences-------------------
 
 ifndef SLASH_PATH
-  $(warning Warning: missing slash path, using default)
-  SLASH_PATH=$(DEPS_DIR)/slash
+SLASH_PATH = $(THIRD_PATH)/slash
 endif
-SLASH_INCLUDE_DIR=$(SLASH_PATH)
-SLASH_LIBRARY=$(SLASH_PATH)/slash/lib/libslash.a
+SLASH = $(SLASH_PATH)/slash/lib/libslash$(DEBUG_SUFFIX).a
+
+ifndef PINK_PATH
+PINK_PATH = $(THIRD_PATH)/pink
+endif
+PINK = $(PINK_PATH)/pink/lib/libpink$(DEBUG_SUFFIX).a
+
+ifndef ROCKSDB_PATH
+ROCKSDB_PATH = $(THIRD_PATH)/rocksdb
+endif
+ROCKSDB = $(ROCKSDB_PATH)/librocksdb$(DEBUG_SUFFIX).a
+
+ifndef GLOG_PATH
+GLOG_PATH = $(THIRD_PATH)/glog
+endif
+
+ifndef BLACKWIDOW_PATH
+BLACKWIDOW_PATH = $(THIRD_PATH)/blackwidow
+endif
+BLACKWIDOW = $(BLACKWIDOW_PATH)/lib/libblackwidow$(DEBUG_SUFFIX).a
+
+ifeq ($(360), 1)
+GLOG := $(GLOG_PATH)/.libs/libglog.a
+endif
+
+INCLUDE_PATH = -I. \
+							 -I$(SLASH_PATH) \
+							 -I$(PINK_PATH) \
+							 -I$(BLACKWIDOW_PATH)/include \
+							 -I$(ROCKSDB_PATH) \
+							 -I$(ROCKSDB_PATH)/include
+
+ifeq ($(360),1)
+INCLUDE_PATH += -I$(GLOG_PATH)/src
+endif
+
+LIB_PATH = -L./ \
+					 -L$(SLASH_PATH)/slash/lib \
+					 -L$(PINK_PATH)/pink/lib \
+					 -L$(BLACKWIDOW_PATH)/lib \
+					 -L$(ROCKSDB_PATH)
+
+ifeq ($(360),1)
+LIB_PATH += -L$(GLOG_PATH)/.libs
+endif
+
+LDFLAGS += $(LIB_PATH) \
+			 		 -lpink$(DEBUG_SUFFIX) \
+			 		 -lslash$(DEBUG_SUFFIX) \
+					 -lblackwidow$(DEBUG_SUFFIX) \
+					 -lrocksdb$(DEBUG_SUFFIX) \
+					 -lglog
+
+# ---------------End Dependences----------------
+
+VERSION_CC=$(SRC_PATH)/build_version.cc
+LIB_SOURCES :=  $(VERSION_CC) \
+				$(filter-out $(VERSION_CC), $(wildcard $(SRC_PATH)/*.cc))
+
+
+#-----------------------------------------------
 
 AM_DEFAULT_VERBOSITY = 0
 
 AM_V_GEN = $(am__v_GEN_$(V))
 am__v_GEN_ = $(am__v_GEN_$(AM_DEFAULT_VERBOSITY))
-am__v_GEN_0 = @echo "  GEN     " $@;
+am__v_GEN_0 = @echo "  GEN     " $(notdir $@);
 am__v_GEN_1 =
 AM_V_at = $(am__v_at_$(V))
 am__v_at_ = $(am__v_at_$(AM_DEFAULT_VERBOSITY))
 am__v_at_0 = @
 am__v_at_1 =
 
-AM_V_CXX = $(am__v_CXX_$(V))
-am__v_CXX_ = $(am__v_CXX_$(AM_DEFAULT_VERBOSITY))
-am__v_CXX_0 = @echo "  CXX     " $@;
-am__v_CXX_1 =
-LD = $(CXX)
-AM_V_LD = $(am__v_LD_$(V))
-am__v_LD_ = $(am__v_LD_$(AM_DEFAULT_VERBOSITY))
-am__v_LD_0 = @echo "  LD      " $@;
-am__v_LD_1 =
-AM_V_AR = $(am__v_AR_$(V))
-am__v_AR_ = $(am__v_AR_$(AM_DEFAULT_VERBOSITY))
-am__v_AR_0 = @echo "  AR      " $@;
-am__v_AR_1 =
+AM_V_CC = $(am__v_CC_$(V))
+am__v_CC_ = $(am__v_CC_$(AM_DEFAULT_VERBOSITY))
+am__v_CC_0 = @echo "  CC      " $(notdir $@);
+am__v_CC_1 =
+CCLD = $(CC)
+LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
+AM_V_CCLD = $(am__v_CCLD_$(V))
+am__v_CCLD_ = $(am__v_CCLD_$(AM_DEFAULT_VERBOSITY))
+am__v_CCLD_0 = @echo "  CCLD    " $(notdir $@);
+am__v_CCLD_1 =
 
-AM_LINK = $(AM_V_LD)$(CXX) $^ -o $@ $(LDFLAGS)
+AM_LINK = $(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS)
+
+CXXFLAGS += -g
 
 # This (the first rule) must depend on "all".
 default: all
 
 WARNING_FLAGS = -W -Wextra -Wall -Wsign-compare \
-  -Wno-unused-parameter -Wno-redundant-decls -Wwrite-strings \
-	-Wpointer-arith -Wreorder -Wswitch -Wsign-promo \
-	-Woverloaded-virtual -Wnon-virtual-dtor -Wno-missing-field-initializers
+  							-Wno-unused-parameter -Woverloaded-virtual \
+								-Wnon-virtual-dtor -Wno-missing-field-initializers
 
 ifndef DISABLE_WARNING_AS_ERROR
   WARNING_FLAGS += -Werror
 endif
 
-CXXFLAGS += $(WARNING_FLAGS) -I. -I./include -I$(ROCKSDB_INCLUDE_DIR) -I$(ROCKSDB_PATH) -I$(SLASH_INCLUDE_DIR) $(OPT)
+CXXFLAGS += $(WARNING_FLAGS) $(INCLUDE_PATH) $(PLATFORM_CXXFLAGS) $(OPT)
+
+LDFLAGS += $(PLATFORM_LDFLAGS)
 
 date := $(shell date +%F)
 git_sha := $(shell git rev-parse HEAD 2>/dev/null)
-gen_build_version = sed -e s/@@GIT_SHA@@/$(git_sha)/ -e s/@@GIT_DATE_TIME@@/$(date)/ $(SRC_DIR)/build_version.cc.in
+gen_build_version = sed -e s/@@GIT_SHA@@/$(git_sha)/ -e s/@@GIT_DATE_TIME@@/$(date)/ src/build_version.cc.in
 # Record the version of the source that we are compiling.
 # We keep a record of the git revision in this file.  It is then built
 # as a regular source file as part of the compilation process.
 # One can run "strings executable_filename | grep _build_" to find
 # the version of the source that we used to build the executable file.
-CLEAN_FILES += $(SRC_DIR)/build_version.cc
+CLEAN_FILES += $(SRC_PATH)/build_version.cc
 
-$(SRC_DIR)/build_version.cc: FORCE
+$(SRC_PATH)/build_version.cc: FORCE
 	$(AM_V_GEN)rm -f $@-t
 	$(AM_V_at)$(gen_build_version) > $@-t
 	$(AM_V_at)if test -f $@; then         \
@@ -108,45 +184,54 @@ FORCE:
 LIBOBJECTS = $(LIB_SOURCES:.cc=.o)
 
 # if user didn't config LIBNAME, set the default
-ifeq ($(LIBNAME),)
-# we should only run blackwidow in production with DEBUG_LEVEL 0
-LIBNAME=libblackwidow
-#ifeq ($(DEBUG_LEVEL),0)
-#        LIBNAME=libblackwidow
-#else
-#        LIBNAME=libblackwidow_debug
-#endif
+ifeq ($(BINNAME),)
+# we should only run pika in production with DEBUG_LEVEL 0
+BINNAME=pika$(DEBUG_SUFFIX)
 endif
-LIBOUTPUT = ./lib
-dummy := $(shell mkdir -p $(LIBOUTPUT))
-LIBRARY = $(LIBOUTPUT)/${LIBNAME}.a
+BINARY = ${BINNAME}
 
-.PHONY: clean dbg static_lib all example
-
-all: $(LIBRARY)
-
-static_lib: $(LIBRARY)
-
-dbg: $(LIBRARY)
-
-test:
-	make test -C ./tests
-
-example:
-	make -C ./examples
-
-$(LIBRARY): $(LIBOBJECTS)
-	$(AM_V_AR)rm -f $@
-	$(AM_V_at)$(AR) $(ARFLAGS) $@ $(LIBOBJECTS)
-
-clean:
-	make -C ./examples clean
-	make -C ./tests clean
-	rm -f $(LIBRARY)
-	rm -rf $(CLEAN_FILES)
-	rm -rf $(LIBOUTPUT)
-	find . -name "*.[oda]*" -path "$(SRC_DIR)/*" -exec rm -rf {} \;
-	find . -type f -regex ".*\.\(\(gcda\)\|\(gcno\)\)" -exec rm {} \;
+.PHONY: distclean clean dbg all
 
 %.o: %.cc
-	$(AM_V_CXX)$(CXX) $(CXXFLAGS) -c $< -o $@
+	  $(AM_V_CC)$(CXX) $(CXXFLAGS) -c $< -o $@
+
+all: $(BINARY)
+
+dbg: $(BINARY)
+
+$(BINARY): $(SLASH) $(PINK) $(ROCKSDB) $(BLACKWIDOW) $(GLOG) $(LIBOBJECTS)
+	$(AM_V_at)rm -f $@
+	$(AM_V_at)$(AM_LINK)
+	$(AM_V_at)rm -rf $(OUTPUT)
+	$(AM_V_at)mkdir -p $(OUTPUT)/bin
+	$(AM_V_at)mv $@ $(OUTPUT)/bin
+	$(AM_V_at)cp -r $(CURDIR)/conf $(OUTPUT)
+	
+
+$(SLASH):
+	$(AM_V_at)make -C $(SLASH_PATH)/slash/ DEBUG_LEVEL=$(DEBUG_LEVEL)
+
+$(PINK):
+	$(AM_V_at)make -C $(PINK_PATH)/pink/ DEBUG_LEVEL=$(DEBUG_LEVEL) NO_PB=1 SLASH_PATH=$(SLASH_PATH)
+
+$(ROCKSDB):
+	$(AM_V_at)make -j $(PROCESSOR_NUMS) -C $(ROCKSDB_PATH)/ static_lib DISABLE_JEMALLOC=1 DEBUG_LEVEL=$(DEBUG_LEVEL)
+
+$(BLACKWIDOW):
+	$(AM_V_at)make -C $(BLACKWIDOW_PATH) ROCKSDB_PATH=$(ROCKSDB_PATH) SLASH_PATH=$(SLASH_PATH) DEBUG_LEVEL=$(DEBUG_LEVEL)
+
+$(GLOG):
+	cd $(THIRD_PATH)/glog; if [ ! -f ./Makefile ]; then ./configure --disable-shared; fi; make; echo '*' > $(CURDIR)/third/glog/.gitignore;
+
+clean:
+	rm -rf $(OUTPUT)
+	rm -rf $(CLEAN_FILES)
+	find $(SRC_PATH) -name "*.[oda]*" -exec rm -f {} \;
+	find $(SRC_PATH) -type f -regex ".*\.\(\(gcda\)\|\(gcno\)\)" -exec rm {} \;
+
+distclean: clean
+	make -C $(PINK_PATH)/pink/ SLASH_PATH=$(SLASH_PATH) clean
+	make -C $(SLASH_PATH)/slash/ clean
+	make -C $(BLACKWIDOW_PATH)/ clean
+	make -C $(ROCKSDB_PATH)/ clean
+#	make -C $(GLOG_PATH)/ clean

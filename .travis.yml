@@ -7,15 +7,11 @@ os:
 
 addons:
   apt:
-    packages: ['libsnappy-dev']
+    packages: ['libsnappy-dev', 'libprotobuf-dev', 'libgoogle-glog-dev']
 
 compiler:
   - gcc
 
 language: cpp
 
-script:
-  - git submodule init
-  - git submodule update
-  - make
-  - make test
+script: make
