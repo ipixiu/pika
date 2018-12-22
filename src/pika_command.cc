@@ -278,6 +278,9 @@ void InitCmdInfoTable() {
   ////ZRange
   CmdInfo* zrangeptr = new CmdInfo(kCmdNameZRange, -4, kCmdFlagsRead | kCmdFlagsZset);
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameZRange, zrangeptr));
+  ////ZRangeLimit
+  CmdInfo* zrangelimitptr = new CmdInfo(kCmdNameZRangeLimit, 5, kCmdFlagsWrite | kCmdFlagsZset);
+  cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameZRangeLimit, zrangelimitptr));
   ////ZRevrange
   CmdInfo* zrevrangeptr = new CmdInfo(kCmdNameZRevrange, -4, kCmdFlagsRead | kCmdFlagsZset);
   cmd_infos.insert(std::pair<std::string, CmdInfo*>(kCmdNameZRevrange, zrevrangeptr));
@@ -717,6 +720,9 @@ void InitCmdTable(std::unordered_map<std::string, Cmd*> *cmd_table) {
   ////ZRangeCmd
   Cmd* zrangeptr = new ZRangeCmd();
   cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNameZRange, zrangeptr));
+  ////ZRangeLimit
+  Cmd* zrangelimitptr = new ZRangeLimitCmd();
+  cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNameZRangeLimit, zrangelimitptr));
   ////ZRevrangeCmd
   Cmd* zrevrangeptr = new ZRevrangeCmd();
   cmd_table->insert(std::pair<std::string, Cmd*>(kCmdNameZRevrange, zrevrangeptr));

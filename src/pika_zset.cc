@@ -211,6 +211,69 @@ void ZRangeCmd::Do() {
   return;
 }
 
+void ZRangeLimitCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
+  if (!ptr_info->CheckArg(argv.size())) {
+    res_.SetRes(CmdRes::kWrongNum, kCmdNameZRange);
+    return;
+  }
+
+  key_ = argv[1];
+
+  int64_t number;
+  if (!slash::string2l(argv[2].data(), argv[2].size(), &number)) {
+    res_.SetRes(CmdRes::kInvalidInt);
+    return;
+  }
+  start_ = (int32_t)(number);
+  if (number != (int64_t)(start_)) {
+    res_.SetRes(CmdRes::kInvalidInt);
+    return;
+  }
+
+  if (!slash::string2l(argv[3].data(), argv[3].size(), &number)) {
+    res_.SetRes(CmdRes::kInvalidInt);
+    return;
+  }
+  number_ = (int32_t)(number);
+  if (number != (int64_t)(number_)) {
+    res_.SetRes(CmdRes::kInvalidInt);
+    return;
+  }
+
+  if (!slash::string2l(argv[4].data(), argv[4].size(), &number)) {
+    res_.SetRes(CmdRes::kInvalidInt);
+    return;
+  }
+  flag_ = (int32_t)(number);
+  if (number != (int64_t)(flag_)) {
+    res_.SetRes(CmdRes::kInvalidInt);
+    return;
+  }
+
+  return;
+}
+
+void ZRangeLimitCmd::Do() {
+  std::vector<blackwidow::ScoreMember> score_members;
+  rocksdb::Status s = g_pika_server->db()->ZRangeLimit(key_, start_, number_, flag_, &score_members);
+  if (s.ok() || s.IsNotFound()) {
+    char buf[32];
+    int64_t len;
+    res_.AppendArrayLen(score_members.size() * 2);
+    for (const auto& sm : score_members) {
+      res_.AppendStringLen(sm.member.size());
+      res_.AppendContent(sm.member);
+      len = slash::d2string(buf, sizeof(buf), sm.score);
+      res_.AppendStringLen(len);
+      res_.AppendContent(buf);
+    }
+  } else {
+    res_.SetRes(CmdRes::kErrOther, s.ToString());
+  }
+
+  return;
+}
+
 void ZRevrangeCmd::DoInitial(PikaCmdArgsType &argv, const CmdInfo* const ptr_info) {
   if (!ptr_info->CheckArg(argv.size())) {
     res_.SetRes(CmdRes::kWrongNum, kCmdNameZRevrange);

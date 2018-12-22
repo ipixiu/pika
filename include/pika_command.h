@@ -150,6 +150,7 @@ const std::string kCmdNameZCard = "zcard";
 const std::string kCmdNameZScan = "zscan";
 const std::string kCmdNameZIncrby = "zincrby";
 const std::string kCmdNameZRange = "zrange";
+const std::string kCmdNameZRangeLimit = "zrangelimit";
 const std::string kCmdNameZRangebyscore = "zrangebyscore";
 const std::string kCmdNameZCount = "zcount";
 const std::string kCmdNameZRem = "zrem";
