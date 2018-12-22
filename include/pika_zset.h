@@ -75,6 +75,16 @@ private:
   virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
 };
 
+class ZRangeLimitCmd : public Cmd {
+public:
+  ZRangeLimitCmd() {}
+  virtual void Do();
+private:
+  std::string key_;
+  int32_t start_, number_, flag_;
+  virtual void DoInitial(PikaCmdArgsType &argvs, const CmdInfo* const ptr_info);
+};
+
 class ZRevrangeCmd : public ZsetRangeParentCmd {
 public:
   virtual void Do();
